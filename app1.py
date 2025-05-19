@@ -10,7 +10,6 @@ import pandas as pd
 from pathlib import Path
 import base64
 from io import BytesIO
-import random
 
 # =====================
 # Configuration
@@ -22,13 +21,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Define constants - using proper relative paths for cloud deployment
+# Define constants
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_CLASSES = 120
-
 MODEL_PATH = "efficientnet_dog_classifier_final.pth"
-DATASET_PATH = "dog_pics"
-BREED_INFO_PATH = "breed_info.json"
+DATASET_PATH = r"C:\Users\BISWADAS\PycharmProjects\DOG_CLASSIFIER\dog_pics"
+
 # App state management
 if 'breed_info_loaded' not in st.session_state:
     st.session_state.breed_info_loaded = False
@@ -88,32 +86,22 @@ st.markdown("""
 # Load class names
 @st.cache_data
 def load_class_names():
-    # Check if dataset path exists, if not, return placeholder data
-    if os.path.exists(DATASET_PATH):
-        return sorted(os.listdir(DATASET_PATH))
-    else:
-        # Return placeholder breed names for demo purposes
-        return [
-            "Labrador_retriever", "Golden_retriever", "Beagle", "Poodle", 
-            "German_shepherd", "Bulldog", "Yorkshire_terrier", "Boxer", 
-            "Dachshund", "Siberian_husky"
-        ]
+    return sorted(os.listdir(DATASET_PATH))
 
 
 # Load or create breed information
 @st.cache_data
 def load_breed_info():
-    breed_info_path = Path(BREED_INFO_PATH)
-    if os.path.exists(breed_info_path):
+    breed_info_path = Path("breed_info.json")
+    if breed_info_path.exists():
         with open(breed_info_path, "r") as f:
             return json.load(f)
     else:
-        # Create placeholder info
-        os.makedirs(os.path.dirname(breed_info_path), exist_ok=True)
+        # Create placeholder info (in production, you'd want real data)
         breed_info = {}
         for breed in load_class_names():
             breed_info[breed] = {
-                "description": f"The {breed.replace('_', ' ')} is a unique dog breed with distinctive characteristics.",
+                "description": f"The {breed} is a unique dog breed with distinctive characteristics.",
                 "origin": "Information not available",
                 "temperament": "Varies",
                 "height": "Varies",
@@ -132,12 +120,9 @@ def load_breed_images():
     for breed in load_class_names():
         breed_folder = os.path.join(DATASET_PATH, breed)
         try:
-            if os.path.exists(breed_folder):
-                img_files = [f for f in os.listdir(breed_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-                if img_files:
-                    breed_images[breed] = os.path.join(breed_folder, img_files[0])
-                else:
-                    breed_images[breed] = None
+            img_files = [f for f in os.listdir(breed_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            if img_files:
+                breed_images[breed] = os.path.join(breed_folder, img_files[0])
             else:
                 breed_images[breed] = None
         except Exception:
@@ -149,11 +134,6 @@ def load_breed_images():
 @st.cache_resource(show_spinner=False)
 def load_model():
     try:
-        # Check if model file exists
-        if not os.path.exists(MODEL_PATH):
-            st.warning(f"Model file not found: {MODEL_PATH}. Running in demo mode with simulated predictions.")
-            return None
-            
         model = models.efficientnet_b3(weights=None)
         num_ftrs = model.classifier[1].in_features
         model.classifier[1] = nn.Sequential(
@@ -189,14 +169,9 @@ def preprocess_image(image):
 
 
 def get_topk_predictions(image_tensor, model, class_names, topk=3):
-    if image_tensor is None:
+    if image_tensor is None or model is None:
         return []
-        
-    # Demo mode - return simulated predictions if model is not available
-    if model is None:
-        # Generate random predictions for demo mode
-        return generate_demo_predictions(class_names, topk), 0.05
-        
+
     with torch.no_grad():
         start_time = time.time()
         outputs = model(image_tensor)
@@ -211,21 +186,6 @@ def get_topk_predictions(image_tensor, model, class_names, topk=3):
         return list(zip(top_classes, top_probs)), inference_time
 
 
-# Function to generate demo predictions when model is not available
-def generate_demo_predictions(class_names, topk=3):
-    # Take a random sample of classes
-    selected_classes = random.sample(class_names, min(topk, len(class_names)))
-    
-    # Generate random probabilities that sum to 1
-    probs = [random.random() for _ in range(topk)]
-    prob_sum = sum(probs)
-    probs = [p/prob_sum for p in probs]
-    
-    # Sort by probability in descending order
-    predictions = list(zip(selected_classes, sorted(probs, reverse=True)))
-    return predictions
-
-
 # Display predictions with improved UI
 def display_predictions(predictions, inference_time=None, breed_info=None):
     if not predictions:
@@ -236,14 +196,14 @@ def display_predictions(predictions, inference_time=None, breed_info=None):
 
     # Display inference time if available
     if inference_time:
-        st.info(f"⏱ Inference time: {inference_time * 1000:.2f}ms")
+        st.info(f"⏱️ Inference time: {inference_time * 1000:.2f}ms")
 
     # Display confidence threshold selector
     confidence_threshold = st.slider(
         "Confidence threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.1,  # Lower default for demo mode
+        value=0.5,
         step=0.05,
         help="Adjust the confidence threshold for predictions"
     )
@@ -254,9 +214,9 @@ def display_predictions(predictions, inference_time=None, breed_info=None):
     if filtered_predictions:
         for i, (breed, prob) in enumerate(filtered_predictions):
             # Progress bar for probability
-            st.markdown(f"{i + 1}. {breed.replace('_', ' ')}")
+            st.markdown(f"**{i + 1}. {breed}**")
             st.progress(float(prob))
-            st.markdown(f"Confidence: {prob * 100:.2f}%")
+            st.markdown(f"Confidence: **{prob * 100:.2f}%**")
 
             # Show breed info if available
             if breed_info and breed in breed_info:
@@ -264,17 +224,15 @@ def display_predictions(predictions, inference_time=None, breed_info=None):
                     col1, col2 = st.columns([1, 2])
                     with col1:
                         breed_images = load_breed_images()
-                        if breed in breed_images and breed_images[breed] and os.path.exists(breed_images[breed]):
+                        if breed in breed_images and breed_images[breed]:
                             st.image(breed_images[breed], use_column_width=True)
-                        else:
-                            st.markdown("No image available")
                     with col2:
-                        st.markdown(f"### {breed.replace('_', ' ')}")
-                        st.markdown(f"Description: {breed_info[breed]['description']}")
-                        st.markdown(f"Origin: {breed_info[breed]['origin']}")
-                        st.markdown(f"Temperament: {breed_info[breed]['temperament']}")
-                        st.markdown(f"Size: {breed_info[breed]['height']} in height, {breed_info[breed]['weight']}")
-                        st.markdown(f"Life Span: {breed_info[breed]['life_span']}")
+                        st.markdown(f"### {breed}")
+                        st.markdown(f"**Description:** {breed_info[breed]['description']}")
+                        st.markdown(f"**Origin:** {breed_info[breed]['origin']}")
+                        st.markdown(f"**Temperament:** {breed_info[breed]['temperament']}")
+                        st.markdown(f"**Size:** {breed_info[breed]['height']} in height, {breed_info[breed]['weight']}")
+                        st.markdown(f"**Life Span:** {breed_info[breed]['life_span']}")
 
             st.markdown("---")
     else:
@@ -293,7 +251,7 @@ def display_image_with_download(image, caption=""):
     if image.mode != "RGB":
         image = image.convert("RGB")
 
-    image.save(buffered, format="JPEG")
+    image.save(buffered, format="JPEG")  # Now this won't fail
     img_str = base64.b64encode(buffered.getvalue()).decode()
 
     href = f'<a href="data:file/jpg;base64,{img_str}" download="dog_prediction.jpg">Download Image</a>'
@@ -329,7 +287,6 @@ def ensure_model_loaded():
                 st.session_state.model_loaded = True
                 return model
             else:
-                # Return None to indicate demo mode
                 return None
     return st.session_state.model
 
@@ -345,13 +302,11 @@ if 'menu' not in st.session_state:
 menu = st.sidebar.radio(
     "Navigation",
     ["Home", "Upload Image", "Take Photo", "View Breeds", "Instructions", "About"],
-    index=["Home", "Upload Image", "Take Photo", "View Breeds", "Instructions", "About"].index(st.session_state.menu)
+    index=["Home", "Upload Image", "Take Photo", "View Breeds", "Instructions", "About"].index(st.session_state.menu),
+    on_change=lambda: setattr(st.session_state, "menu", st.session_state.get("menu", "Home"))
 )
 
-# Display model status
-if not os.path.exists(MODEL_PATH):
-    st.sidebar.warning("⚠ Running in demo mode (model not found)")
-    
+
 # Display processor info
 st.sidebar.markdown("---")
 st.sidebar.info(f"Running on: {DEVICE}")
@@ -372,7 +327,7 @@ if menu == "Home":
         Simply upload a photo or take one with your camera!
 
         ### Features:
-        - 🖼 Upload images from your device
+        - 🖼️ Upload images from your device
         - 📸 Take photos using your webcam
         - 🔍 View all 120 dog breeds in our gallery
         - 📊 Get detailed breed information
@@ -382,16 +337,14 @@ if menu == "Home":
         # Quick access buttons
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("🖼 Upload Image", use_container_width=True):
+            if st.button("🖼️ Upload Image", use_container_width=True):
                 st.session_state.menu = "Upload Image"
-                st.rerun()
         with col_b:
             if st.button("📸 Take Photo", use_container_width=True):
                 st.session_state.menu = "Take Photo"
-                st.rerun()
     with col2:
         st.image(
-            "https://images.unsplash.com/photo-1548199973-03cce0bbc87b?ixlib=rb-4.0.3&q=85&fm=jpg&crop=entropy&cs=srgb&w=640",
+            "https://media.istockphoto.com/id/1317090206/photo/group-of-different-kind-of-dogs-as-a-team.jpg?s=612x612&w=0&k=20&c=Sxt_7R0vYdnKQCgYhw-FxZAphoBRqcf9nDxbJFR7-WU=",
             caption="Identify over 120 dog breeds")
 
     st.markdown("---")
@@ -400,17 +353,19 @@ if menu == "Home":
     st.markdown("<h2 class='sub-header'>Popular Dog Breeds</h2>", unsafe_allow_html=True)
 
     # Show 5 random breeds as a preview
-    sample_breeds = random.sample(class_names, min(5, len(class_names)))
+    import random
+
+    sample_breeds = random.sample(class_names, 5)
 
     cols = st.columns(5)
     for i, breed in enumerate(sample_breeds):
         with cols[i]:
             st.markdown(f"<div class='breed-card'>", unsafe_allow_html=True)
-            if breed in breed_images and breed_images[breed] and os.path.exists(breed_images[breed]):
+            if breed_images[breed]:
                 st.image(breed_images[breed], use_column_width=True)
             else:
                 st.markdown("No image available")
-            st.markdown(f"<p style='text-align:center'><b>{breed.replace('_', ' ')}</b></p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align:center'><b>{breed}</b></p>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
@@ -437,10 +392,10 @@ elif menu == "Upload Image":
         image = Image.open(uploaded_file)
         display_image_with_download(image, "Uploaded Image")
 
-        # Ensure model is loaded (might be None in demo mode)
+        # Ensure model is loaded
         model = ensure_model_loaded()
 
-        if st.button("🔍 Identify Breed", use_container_width=True):
+        if model and st.button("🔍 Identify Breed", use_container_width=True):
             with st.spinner("Analyzing image..."):
                 input_tensor = preprocess_image(image)
                 predictions, inference_time = get_topk_predictions(input_tensor, model, class_names, topk=5)
@@ -482,7 +437,7 @@ elif menu == "Take Photo":
         # Ensure model is loaded
         model = ensure_model_loaded()
 
-        if st.button("🔍 Identify Breed", use_container_width=True):
+        if model and st.button("🔍 Identify Breed", use_container_width=True):
             with st.spinner("Analyzing image..."):
                 input_tensor = preprocess_image(image)
                 predictions, inference_time = get_topk_predictions(input_tensor, model, class_names, topk=5)
@@ -536,12 +491,12 @@ elif menu == "View Breeds":
         for idx, breed in enumerate(filtered_breeds):
             with cols[idx % 4]:
                 st.markdown(f"<div class='breed-card'>", unsafe_allow_html=True)
-                if breed in breed_images and breed_images[breed] and os.path.exists(breed_images[breed]):
+                if breed_images[breed] and os.path.exists(breed_images[breed]):
                     st.image(breed_images[breed], use_column_width=True)
                 else:
                     st.markdown("No image available")
 
-                if st.button(f"View {breed.replace('', ' ')}", key=f"breed{breed}"):
+                if st.button(f"View {breed}", key=f"breed_{breed}"):
                     st.session_state.selected_breed = breed
                 st.markdown("</div>", unsafe_allow_html=True)
     else:
@@ -549,12 +504,12 @@ elif menu == "View Breeds":
         for breed in filtered_breeds:
             col1, col2 = st.columns([1, 3])
             with col1:
-                if breed in breed_images and breed_images[breed] and os.path.exists(breed_images[breed]):
+                if breed_images[breed] and os.path.exists(breed_images[breed]):
                     st.image(breed_images[breed], use_column_width=True)
                 else:
                     st.markdown("No image available")
             with col2:
-                st.markdown(f"### {breed.replace('_', ' ')}")
+                st.markdown(f"### {breed}")
                 if breed in breed_info:
                     st.markdown(f"{breed_info[breed]['description'][:100]}...")
                 if st.button(f"View Details", key=f"list_{breed}"):
@@ -565,23 +520,21 @@ elif menu == "View Breeds":
     if 'selected_breed' in st.session_state:
         breed = st.session_state.selected_breed
         st.markdown("---")
-        st.markdown(f"<h2 class='sub-header'>{breed.replace('_', ' ')}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 class='sub-header'>{breed}</h2>", unsafe_allow_html=True)
 
         col1, col2 = st.columns([1, 2])
         with col1:
-            if breed in breed_images and breed_images[breed] and os.path.exists(breed_images[breed]):
+            if breed_images[breed] and os.path.exists(breed_images[breed]):
                 st.image(breed_images[breed], use_column_width=True)
-            else:
-                st.markdown("No image available")
         with col2:
             if breed in breed_info:
                 info = breed_info[breed]
-                st.markdown(f"Description: {info['description']}")
-                st.markdown(f"Origin: {info['origin']}")
-                st.markdown(f"Temperament: {info['temperament']}")
-                st.markdown(f"Height: {info['height']}")
-                st.markdown(f"Weight: {info['weight']}")
-                st.markdown(f"Life Span: {info['life_span']}")
+                st.markdown(f"**Description:** {info['description']}")
+                st.markdown(f"**Origin:** {info['origin']}")
+                st.markdown(f"**Temperament:** {info['temperament']}")
+                st.markdown(f"**Height:** {info['height']}")
+                st.markdown(f"**Weight:** {info['weight']}")
+                st.markdown(f"**Life Span:** {info['life_span']}")
 
 elif menu == "Instructions":
     st.markdown("<h1 class='main-header'>How to Use This App</h1>", unsafe_allow_html=True)
@@ -620,17 +573,17 @@ elif menu == "Instructions":
     with tab2:
         st.markdown("### Using the App")
         st.markdown("""
-        1. Upload an Image:
+        1. **Upload an Image**:
            - Click "Upload Image" in the sidebar
            - Upload a dog photo from your device
            - Click "Identify Breed" to get results
 
-        2. Take a Photo:
+        2. **Take a Photo**:
            - Click "Take Photo" in the sidebar
            - Use your device's camera to take a picture
            - Click "Identify Breed" to get results
 
-        3. Browse Breeds:
+        3. **Browse Breeds**:
            - Click "View Breeds" to see all available dog breeds
            - Use the search box to find specific breeds
            - Click on any breed to view detailed information
@@ -651,7 +604,7 @@ elif menu == "Instructions":
             caption="Example of prediction results")
 
         st.markdown("""
-        Note: While the AI model is very accurate, it may occasionally misidentify breeds, especially with:
+        **Note**: While the AI model is very accurate, it may occasionally misidentify breeds, especially with:
         - Mixed breed dogs
         - Unusual color variations
         - Puppies (which may not yet have all adult features)
@@ -668,12 +621,12 @@ elif menu == "About":
     This application uses a deep learning model (EfficientNet-B3) trained on a dataset of 120 different dog breeds to identify dogs in images.
 
     ### Technology Stack:
-    - Frontend: Streamlit
-    - AI Model: EfficientNet-B3 (PyTorch)
-    - Dataset: Stanford Dogs Dataset (120 breeds)
+    - **Frontend**: Streamlit
+    - **AI Model**: EfficientNet-B3 (PyTorch)
+    - **Dataset**: Stanford Dogs Dataset (120 breeds)
 
     ### Model Performance:
-    - Accuracy: ~94% on test set
+    - **Accuracy**: ~94% on test set
 
     ### Privacy Notice:
     Images uploaded to this application are processed locally and are not stored permanently. 
@@ -689,18 +642,8 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center;'>
-        <p>Dog Breed Identifier v1.0 | Built with ❤ using Streamlit and PyTorch</p>
+        <p>Dog Breed Identifier v1.0 | Built with ❤️ using Streamlit and PyTorch</p>
     </div>
     """,
-    unsafe_allow_html=True)
-
-# Check if the app is in demo mode (model not found)
-if not os.path.exists(MODEL_PATH):
-    st.warning("""
-    ⚠ Model file not found. The app is running in demo mode with simulated predictions.
-    
-    To use the full model:
-    1. Download the efficientnet_dog_classifier_final.pth model file
-    2. Place it in the models folder
-    3. Restart the app
-    """)
+    unsafe_allow_html=True
+)
