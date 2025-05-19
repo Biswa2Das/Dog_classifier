@@ -25,7 +25,7 @@ st.set_page_config(
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_CLASSES = 120
 MODEL_PATH = "efficientnet_dog_classifier_final.pth"
-DATASET_PATH = r"C:\Users\BISWADAS\PycharmProjects\DOG_CLASSIFIER\dog_pics"
+DATASET_PATH = "Dataset/dog_pics"
 
 # App state management
 if 'breed_info_loaded' not in st.session_state:
