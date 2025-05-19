@@ -5,6 +5,10 @@ from torchvision import models, transforms
 from PIL import Image
 import os
 import json
+import traceback
+
+# Add debugging tools
+DEBUG = True  # Set to False in production
 
 # Configuration
 st.set_page_config(
@@ -77,41 +81,41 @@ def load_model():
         
         # Check if model exists locally
         if not os.path.exists(MODEL_PATH):
-            # For deployment, you would add code here to download the model from cloud storage
-            # Example using requests (you'll need to add requests to requirements.txt):
-            # 
-            # import requests
-            # st.info("Downloading model file. This may take a minute...")
-            # MODEL_URL = "https://your-storage-url/efficientnet_dog_classifier_final.pth"
-            # with open(MODEL_PATH, 'wb') as f:
-            #     response = requests.get(MODEL_URL, stream=True)
-            #     total_length = int(response.headers.get('content-length', 0))
-            #     
-            #     # Show a progress bar during download
-            #     progress_bar = st.progress(0)
-            #     downloaded = 0
-            #     
-            #     for data in response.iter_content(chunk_size=4096):
-            #         downloaded += len(data)
-            #         f.write(data)
-            #         if total_length > 0:
-            #             progress_bar.progress(min(downloaded / total_length, 1.0))
-            # 
-            # st.success("Model downloaded successfully!")
-            
-            # If download not implemented, run in demo mode
             st.warning("Model file not found. Running in demo mode with simulated predictions.")
+            if DEBUG:
+                st.info(f"Looking for model at: {os.path.abspath(MODEL_PATH)}")
             return None
+            
+        if DEBUG:
+            st.info(f"Loading model from: {os.path.abspath(MODEL_PATH)}")
             
         model = models.efficientnet_b3(weights=None)
         num_ftrs = model.classifier[1].in_features
-        model.classifier[1] = nn.Linear(num_ftrs, NUM_CLASSES)
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+        
+        # Using nn.Sequential with Dropout as shown in the original code
+        # This matches the structure in your saved model
+        model.classifier[1] = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(num_ftrs, NUM_CLASSES)
+        )
+        
+        try:
+            model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+        except Exception as e:
+            if DEBUG:
+                st.error(f"Error in state_dict: {str(e)}")
+                st.code(traceback.format_exc())
+            # Try with strict=False as fallback
+            model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE), strict=False)
+            st.warning("Model loaded with strict=False, some layers may be missing")
+            
         model.to(DEVICE)
         model.eval()
         return model
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
+        if DEBUG:
+            st.code(traceback.format_exc())
         return None
 
 def get_image_transform():
@@ -174,7 +178,7 @@ def main():
         
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            st.image(image, caption="Uploaded Image", use_column_width=True)
+            st.image(image, caption="Uploaded Image", use_container_width=True)
             
             if st.button("Identify Breed"):
                 with st.spinner("Analyzing..."):
