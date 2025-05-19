@@ -25,10 +25,10 @@ st.set_page_config(
 # Define constants - using proper relative paths for cloud deployment
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_CLASSES = 120
-MODEL_PATH = os.path.join("models", "efficientnet_dog_classifier_final.pth")
-DATASET_PATH = os.path.join("data", "dog_pics")
-BREED_INFO_PATH = os.path.join("data", "breed_info.json")
 
+MODEL_PATH = "efficientnet_dog_classifier_final.pth"
+DATASET_PATH = "dog_pics"
+BREED_INFO_PATH = "breed_info.json"
 # App state management
 if 'breed_info_loaded' not in st.session_state:
     st.session_state.breed_info_loaded = False
